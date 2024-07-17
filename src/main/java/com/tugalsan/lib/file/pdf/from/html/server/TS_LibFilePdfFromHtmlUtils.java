@@ -1,88 +1,90 @@
 package com.tugalsan.lib.file.pdf.from.html.server;
 
+import com.tugalsan.api.file.properties.server.TS_FilePropertiesUtils;
+import com.tugalsan.api.file.server.TS_FileUtils;
+import com.tugalsan.api.log.server.TS_Log;
+import com.tugalsan.api.os.server.TS_OsJavaUtils;
+import com.tugalsan.api.os.server.TS_OsProcess;
+import com.tugalsan.api.union.client.TGS_UnionExcuse;
+import com.tugalsan.api.unsafe.client.TGS_UnSafe;
+import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Properties;
+import java.util.stream.Collectors;
 
-public class TS_FilePdfSignUtils {
+public class TS_LibFilePdfFromHtmlUtils {
 
-    final private static TS_Log d = TS_Log.of(true, TS_FilePdfSignUtils.class);
+    final private static TS_Log d = TS_Log.of(true, TS_LibFilePdfFromHtmlUtils.class);
 
-    public static Path getPossibleDriverPath() {
+    public static Path pathDriver() {
         return List.of(File.listRoots()).stream()
                 .map(p -> Path.of(p.toString()))
                 .map(p -> p.resolve("bin"))
-                .map(p -> p.resolve(TS_FilePdfSignUtils.class.getPackageName()))
+                .map(p -> p.resolve(TS_LibFilePdfFromHtmlUtils.class.getPackageName()))
                 .map(p -> p.resolve("home"))
-                .map(p -> p.resolve("target"))
-                .map(p -> p.resolve(TS_FilePdfSignUtils.class.getPackageName() + "-1.0-SNAPSHOT-jar-with-dependencies.jar"))
+                .map(p -> p.resolve(TS_LibFilePdfFromHtmlUtils.class.getPackageName() + "-1.0-SNAPSHOT-jar-with-dependencies.jar"))
                 .filter(p -> TS_FileUtils.isExistFile(p))
                 .findAny().orElse(null);
     }
 
-    public static Path getHtmlPath(Path rawPdf) {
+    public static Path pathOutput(Path rawPdf) {
         var label = TS_FileUtils.getNameLabel(rawPdf);
         return rawPdf.resolveSibling(label + ".html");
     }
 
-    public static Path getConfigPdfPath(Path rawPdf) {
-//        var label = TS_FileUtils.getNameLabel(rawPdf);
-        return rawPdf.resolveSibling("config.properties");
+    public static Path pathConfig(Path file) {
+        return file.resolveSibling("config.properties");
     }
 
-    @Deprecated //NOT WORKING!
-    public static TGS_UnionExcuse<Boolean> isSignedBefore(Path pdf) {
-        return TGS_UnSafe.call(() -> {
-            try (var doc = Loader.loadPDF(pdf.toFile())) {
-                return TGS_UnionExcuse.of(!doc.getSignatureDictionaries().isEmpty());
-            }
-        }, e -> TGS_UnionExcuse.ofExcuse(e));
-    }
-
-    public static Properties config(Path pdfInput) {
+    public static Properties makeConfig(Path pathInput) {
         var props = new Properties();
-        props.setProperty("inpdf.file", pdfInput.toAbsolutePath().toString());
+        props.setProperty(CONFIG_PARAM_PATH_INPUT, pathInput.toAbsolutePath().toString());
         return props;
     }
+    public static String CONFIG_PARAM_PATH_INPUT = "pathInput";
 
-    public static TGS_UnionExcuse<Path> makePdf(Path driver, Path pdfInput) {
+    public static TGS_UnionExcuse<Path> execute(Path driver, Path pathInput) {
         return TGS_UnSafe.call(() -> {
-             d.ci("makePdf", "pdfInput", pdfInput);
+            d.ci("execute", "pathInput", pathInput);
             //CREATE TMP-INPUT BY MAIN-INPUT
             var tmp = Files.createTempDirectory("tmp").toAbsolutePath();
-            var _pdfInput = tmp.resolve("_pdfInput.pdf");
-            TS_FileUtils.copyAs(pdfInput, _pdfInput, true);
+            var _pathInput = tmp.resolve("_pathInput.pdf");
+            TS_FileUtils.copyAs(pathInput, _pathInput, true);
 
             //IF DONE, COPY TMP-OUTPUT TO MAIN-OUTPUT
-            var u = _makePdf(driver, cfgSssl, cfgDesc, _pdfInput);
+            var u = _execute(driver, _pathInput);
             if (u.isExcuse()) {
                 return u.toExcuse();
             }
-            var pdfOutput = getSignedPdfPath(pdfInput);
+            var pdfOutput = pathOutput(pathInput);
             TS_FileUtils.copyAs(u.value(), pdfOutput, true);
 
             return TGS_UnionExcuse.of(pdfOutput);
         }, e -> TGS_UnionExcuse.ofExcuse(e));
     }
 
-    private static TGS_UnionExcuse<Path> _makePdf(Path driver, TS_FilePdfSignCfgSsl cfgSssl, TS_FilePdfSignCfgDesc cfgDesc, Path pdfInput) {
-        var outputPdf = getSignedPdfPath(pdfInput);
-        d.ci("_makePdf", "outputPdf", outputPdf);
-        var configPdf = getConfigPdfPath(pdfInput);
-        d.ci("_makePdf", "configPdf", configPdf);
-        TS_FilePropertiesUtils.write(config(cfgSssl, cfgDesc, pdfInput), configPdf);
+    private static TGS_UnionExcuse<Path> _execute(Path driver, Path pathInput) {
+        var pathOutput = pathOutput(pathInput);
+        d.ci("_execute", "pathOutput", pathOutput);
+        var pathConfig = pathConfig(pathInput);
+        d.ci("_execute", "pathConfig", pathConfig);
+        TS_FilePropertiesUtils.write(makeConfig(pathInput), pathConfig);
         return TGS_UnSafe.call(() -> {
-            d.ci("_makePdf", "cfgSssl", cfgSssl);
-            d.ci("_makePdf", "cfgDesc", cfgDesc);
-            d.ci("_makePdf", "rawPdf", pdfInput);
+            d.ci("_execute", "rawPdf", pathInput);
             //CHECK IN-FILE
-            if (pdfInput == null || !TS_FileUtils.isExistFile(pdfInput)) {
-                return TGS_UnionExcuse.ofExcuse(d.className, "_makePdf", "input file not exists-" + pdfInput);
+            if (pathInput == null || !TS_FileUtils.isExistFile(pathInput)) {
+                return TGS_UnionExcuse.ofExcuse(d.className, "_execute", "pathInput not exists-" + pathInput);
             }
-            if (TS_FileUtils.isEmptyFile(pdfInput)) {
-                return TGS_UnionExcuse.ofExcuse(d.className, "_makePdf", "input file is empty-" + pdfInput);
+            if (TS_FileUtils.isEmptyFile(pathInput)) {
+                return TGS_UnionExcuse.ofExcuse(d.className, "_execute", "pathInput is empty-" + pathInput);
             }
             //CHECK OUT-FILE
-            TS_FileUtils.deleteFileIfExists(outputPdf);
-            if (TS_FileUtils.isExistFile(outputPdf)) {
-                return TGS_UnionExcuse.ofExcuse(d.className, "_makePdf", "output file cleanup error-" + outputPdf);
+            TS_FileUtils.deleteFileIfExists(pathOutput);
+            if (TS_FileUtils.isExistFile(pathOutput)) {
+                return TGS_UnionExcuse.ofExcuse(d.className, "_execute", "pathOutput cleanup error-" + pathOutput);
             }
             //SIGN
             List<String> args = new ArrayList();
@@ -90,29 +92,29 @@ public class TS_FilePdfSignUtils {
             args.add("-jar");
             args.add("\"" + driver.toAbsolutePath().toString() + "\"");
             args.add("--load-properties-file");
-            args.add("\"" + configPdf.toAbsolutePath().toString() + "\"");
-            d.cr("_makePdf", "args", args);
+            args.add("\"" + pathConfig.toAbsolutePath().toString() + "\"");
+            d.cr("_execute", "args", args);
             var cmd = args.stream().collect(Collectors.joining(" "));
-            d.cr("_makePdf", "cmd", cmd);
+            d.cr("_execute", "cmd", cmd);
             var p = TS_OsProcess.of(args);
             //CHECK OUT-FILE
-            if (!TS_FileUtils.isExistFile(outputPdf)) {
-                d.ce("_makePdf", "cmd", p.toString());
-                return TGS_UnionExcuse.ofExcuse(d.className, "_makePdf", "output file not created-" + outputPdf);
+            if (!TS_FileUtils.isExistFile(pathOutput)) {
+                d.ce("_execute", "cmd", p.toString());
+                return TGS_UnionExcuse.ofExcuse(d.className, "_execute", "pathOutput not created-" + pathOutput);
             }
-            if (TS_FileUtils.isEmptyFile(outputPdf)) {
-                d.ce("_makePdf", "cmd", p.toString());
-                TS_FileUtils.deleteFileIfExists(outputPdf);
-                return TGS_UnionExcuse.ofExcuse(d.className, "_makePdf", "output file is empty-" + outputPdf);
+            if (TS_FileUtils.isEmptyFile(pathOutput)) {
+                d.ce("_execute", "cmd", p.toString());
+                TS_FileUtils.deleteFileIfExists(pathOutput);
+                return TGS_UnionExcuse.ofExcuse(d.className, "_execute", "pathOutput is empty-" + pathOutput);
             }
             //RETURN
-            d.cr("_makePdf", "returning outputPdf", outputPdf);
-            return TGS_UnionExcuse.of(outputPdf);
+            d.cr("_execute", "returning pathOutput", pathOutput);
+            return TGS_UnionExcuse.of(pathOutput);
         }, e -> {
             //HANDLE EXCEPTION
-            d.ce("_makePdf", "HANDLE EXCEPTION...");
-            TS_FileUtils.deleteFileIfExists(outputPdf);
+            d.ce("_execute", "HANDLE EXCEPTION...");
+            TS_FileUtils.deleteFileIfExists(pathOutput);
             return TGS_UnionExcuse.ofExcuse(e);
-        }, () -> TS_FileUtils.deleteFileIfExists(configPdf));
+        }, () -> TS_FileUtils.deleteFileIfExists(pathConfig));
     }
 }
