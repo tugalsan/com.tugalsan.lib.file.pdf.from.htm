@@ -6,4 +6,5 @@ module com.tugalsan.lib.file.pdf.from.html {
     requires com.tugalsan.api.union;
     requires com.tugalsan.api.function;
     requires com.tugalsan.api.log;
+    exports com.tugalsan.lib.file.pdf.from.html.server;
 }
